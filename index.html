@@ -3,24 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>治安風險情報雷達</title>
+    <title>治安風險情報雷達 - 完整版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 硬派暗黑風格設定 */
-        body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, sans-serif; }
         #map { width: 100%; height: 100vh; }
-        
-        /* 情報圖例面板 */
         .legend {
             position: absolute; bottom: 30px; left: 10px; z-index: 1000;
             background: rgba(20, 20, 20, 0.9); padding: 15px; border-radius: 4px;
             color: #e0e0e0; border: 1px solid #444; box-shadow: 0 0 15px rgba(0,0,0,0.8);
         }
-        .legend h4 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #a9a9a9; border-bottom: 1px solid #444; padding-bottom: 5px;}
+        .legend h4 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #a9a9a9; border-bottom: 1px solid #444; padding-bottom: 5px;}
         .legend-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; font-weight: bold; }
         .color-box { width: 14px; height: 14px; border-radius: 50%; margin-right: 10px; border: 1px solid #fff; }
-        
-        /* 鑑識風格資訊卡 */
         .leaflet-popup-content-wrapper { background: #1e1e1e; color: #fff; border: 1px solid #555; border-radius: 2px; }
         .leaflet-popup-tip { background: #1e1e1e; }
         .popup-title { font-weight: bold; color: #ff4d4d; border-bottom: 1px dashed #555; padding-bottom: 6px; margin-bottom: 6px; font-size: 14px;}
@@ -28,7 +23,6 @@
 </head>
 <body>
     <div id="map"></div>
-    
     <div class="legend">
         <h4>案件類型情報</h4>
         <div id="legend-items"></div>
@@ -36,87 +30,59 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // 1. 初始化地圖 (預設中心點設定為台灣，暗黑模式底圖)
         const map = L.map('map').setView([23.6978, 120.9605], 7);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            maxZoom: 18
+            attribution: '&copy; CARTO', maxZoom: 18
         }).addTo(map);
 
-        // 2. 案類顏色配置邏輯
         const colorMap = {
-            '毒品': '#ff2a2a',   // 紅色警戒
-            '竊盜': '#ffb300',   // 橘色警戒
-            '詐欺': '#00d4ff',   // 藍色追蹤
-            '暴力': '#ff007f',   // 桃紅高危
-            '預設': '#888888'    // 灰色未分類
+            '毒品': '#ff2a2a', '竊盜': '#ffb300', '詐欺': '#00d4ff', '暴力': '#ff007f', '預設': '#888888'
         };
 
-        // 自動生成圖例面板
         const legendContainer = document.getElementById('legend-items');
         Object.keys(colorMap).forEach(type => {
-            legendContainer.innerHTML += `
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: ${colorMap[type]}"></div>
-                    <span>${type}</span>
-                </div>
-            `;
+            legendContainer.innerHTML += `<div class="legend-item"><div class="color-box" style="background-color: ${colorMap[type]}"></div><span>${type}</span></div>`;
         });
 
-        // 3. 讀取與解析 JSON 數據
         fetch('data.json')
             .then(response => response.json())
             .then(rawData => {
-                // 【新增容錯機制】：不管轉檔工具吐出字典還是清單，強制轉成標準陣列！
                 const data = Array.isArray(rawData) ? rawData : Object.values(rawData);
                 
                 data.forEach(item => {
                     let lat, lng;
-                    
-                    // 容錯機制：自動判斷 JSON 欄位寫法
-                    if (item.lat && item.lng) {
-                        lat = item.lat; lng = item.lng;
-                    } else if (item['經度'] && item['緯度']) {
-                        lat = item['緯度']; lng = item['經度'];
-                    } else if (item['經緯度']) {
+                    if (item['經緯度']) {
                         const coords = item['經緯度'].split(',');
                         lat = parseFloat(coords[0]); lng = parseFloat(coords[1]);
+                    } else if (item.lat && item.lng) {
+                        lat = item.lat; lng = item.lng;
                     }
 
                     if (lat && lng) {
-                        // 抓取案類與行政區 (相容中英文欄位名稱)
-                        const caseType = item['案類'] || item.type || item['案類別'] || '預設';
-                        const region = item['完整行政區域'] || item.region || '位置情報';
-                        const markerColor = colorMap[caseType] || colorMap['預設'];
+                        const jitterLat = lat + (Math.random() - 0.5) * 0.025;
+                        const jitterLng = lng + (Math.random() - 0.5) * 0.025;
 
-                        // 建立圓形實戰氣泡標記
-                        const marker = L.circleMarker([lat, lng], {
-                            radius: 6,
-                            fillColor: markerColor,
-                            color: "#000",
-                            weight: 1.5,
-                            opacity: 1,
-                            fillOpacity: 0.85
-                        }).addTo(map);
+                        let caseType = '未分類案件';
+                        let region = '未知區域';
+                        for (let key in item) {
+                            if (key.includes('案') || key.includes('類')) caseType = String(item[key]);
+                            if (key.includes('區') || key.includes('鄉') || key.includes('鎮')) region = String(item[key]);
+                        }
 
-                        // 綁定點擊後彈出的資訊卡
-                        // 【情報擴充】：精準抓取詳細時間數據 (並加入防呆機制)
-                        const year = item['發生年度'] || item.year || '未知';
-                        const month = item['發生月份'] || item.month || '-';
-                        const date = item['發生日期'] || item.date || '-';
+                        let markerColor = colorMap['預設'];
+                        for (let colorKey in colorMap) {
+                            if (caseType.includes(colorKey)) { markerColor = colorMap[colorKey]; break; }
+                        }
+
+                        const year = item['發生年度'] || '未知';
+                        const month = item['發生月份'] || '-';
+                        const date = item['發生日期'] || '-';
                         const timeString = (year !== '未知') ? `民國 ${year} 年 ${month} 月 ${date} 日` : '時間情報未明';
 
-                        // 建立圓形實戰氣泡標記
                         const marker = L.circleMarker([jitterLat, jitterLng], {
-                            radius: 4,
-                            fillColor: markerColor,
-                            color: "#000",
-                            weight: 0.5,
-                            opacity: 1,
-                            fillOpacity: 0.7
+                            radius: 4, fillColor: markerColor, color: "#000", weight: 0.5, opacity: 1, fillOpacity: 0.7
                         }).addTo(map);
 
-                        // 綁定點擊後彈出的資訊卡 (升級版 UI 排版)
                         marker.bindPopup(`
                             <div class="popup-title">📍 ${region}</div>
                             <div style="margin-bottom: 5px;"><b>事件類型：</b> ${caseType}</div>
@@ -125,3 +91,10 @@
                                 偏移座標: ${jitterLat.toFixed(4)}, ${jitterLng.toFixed(4)}
                             </div>
                         `);
+                    }
+                });
+            })
+            .catch(err => console.error('數據讀取出錯:', err));
+    </script>
+</body>
+</html>
