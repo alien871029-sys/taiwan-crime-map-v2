@@ -66,7 +66,10 @@
         // 3. 讀取與解析 JSON 數據
         fetch('data.json')
             .then(response => response.json())
-            .then(data => {
+            .then(rawData => {
+                // 【新增容錯機制】：不管轉檔工具吐出字典還是清單，強制轉成標準陣列！
+                const data = Array.isArray(rawData) ? rawData : Object.values(rawData);
+                
                 data.forEach(item => {
                     let lat, lng;
                     
