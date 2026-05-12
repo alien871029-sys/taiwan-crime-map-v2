@@ -3,33 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>治安風險情報雷達 - 完整版</title>
+    <title>全台治安情報儀表板</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        #map { width: 100%; height: 100vh; }
+        body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, sans-serif; overflow: hidden; }
+        
+        /* 升級排版：左右分割佈局 */
+        #app-container { display: flex; height: 100vh; width: 100vw; }
+        
+        /* 左側數據面板設計 */
+        #sidebar { 
+            width: 320px; background-color: #1a1a1a; color: #e0e0e0; 
+            display: flex; flex-direction: column; border-right: 1px solid #333; z-index: 2000; box-shadow: 2px 0 15px rgba(0,0,0,0.5);
+        }
+        .sidebar-header { padding: 20px; background: #222; border-bottom: 2px solid #ff4d4d; }
+        .sidebar-header h2 { margin: 0; font-size: 18px; letter-spacing: 1px; color: #fff; }
+        .sidebar-content { flex-grow: 1; overflow-y: auto; padding: 15px; }
+        
+        /* 縣市數據卡片風格 */
+        .city-card { background: #252525; border: 1px solid #444; border-radius: 6px; padding: 15px; margin-bottom: 15px; }
+        .city-name { font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;}
+        .risk-badge { font-size: 12px; padding: 3px 8px; border-radius: 12px; font-weight: bold; }
+        .risk-high { background: rgba(255, 42, 42, 0.2); color: #ff2a2a; border: 1px solid #ff2a2a; }
+        .risk-medium { background: rgba(255, 179, 0, 0.2); color: #ffb300; border: 1px solid #ffb300; }
+        .risk-low { background: rgba(0, 212, 255, 0.2); color: #00d4ff; border: 1px solid #00d4ff; }
+        
+        .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin-top: 6px; color: #bbb; border-bottom: 1px dashed #444; padding-bottom: 4px; }
+        .stat-total { font-size: 14px; font-weight: bold; color: #ff4d4d; margin-top: 10px; text-align: right; }
+
+        /* 右側地圖區塊 */
+        #map-wrapper { flex-grow: 1; position: relative; }
+        #map { width: 100%; height: 100%; }
+        
+        /* 右下角圖例保留 */
         .legend {
-            position: absolute; bottom: 30px; left: 10px; z-index: 1000;
+            position: absolute; bottom: 30px; right: 10px; z-index: 1000;
             background: rgba(20, 20, 20, 0.9); padding: 15px; border-radius: 4px;
-            color: #e0e0e0; border: 1px solid #444; box-shadow: 0 0 15px rgba(0,0,0,0.8);
+            color: #e0e0e0; border: 1px solid #444;
         }
         .legend h4 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #a9a9a9; border-bottom: 1px solid #444; padding-bottom: 5px;}
         .legend-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; font-weight: bold; }
         .color-box { width: 14px; height: 14px; border-radius: 50%; margin-right: 10px; border: 1px solid #fff; }
-        .leaflet-popup-content-wrapper { background: #1e1e1e; color: #fff; border: 1px solid #555; border-radius: 2px; }
+        
+        /* 彈出視窗樣式 */
+        .leaflet-popup-content-wrapper { background: #1e1e1e; color: #fff; border: 1px solid #555; }
         .leaflet-popup-tip { background: #1e1e1e; }
-        .popup-title { font-weight: bold; color: #ff4d4d; border-bottom: 1px dashed #555; padding-bottom: 6px; margin-bottom: 6px; font-size: 14px;}
+        .popup-title { font-weight: bold; color: #ff4d4d; border-bottom: 1px dashed #555; padding-bottom: 6px; margin-bottom: 6px;}
+        
+        /* 滾動條美化 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
     </style>
 </head>
 <body>
-    <div id="map"></div>
-    <div class="legend">
-        <h4>案件類型情報</h4>
-        <div id="legend-items"></div>
+    <div id="app-container">
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <h2>📊 區域治安分析情報</h2>
+            </div>
+            <div class="sidebar-content" id="dashboard-content">
+                <div style="text-align:center; color:#888; margin-top:20px;">資料演算中...</div>
+            </div>
+        </div>
+
+        <div id="map-wrapper">
+            <div id="map"></div>
+            <div class="legend">
+                <h4>案件類型標示</h4>
+                <div id="legend-items"></div>
+            </div>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        // 1. 初始化地圖
         const map = L.map('map').setView([23.6978, 120.9605], 7);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; CARTO', maxZoom: 18
@@ -44,57 +93,32 @@
             legendContainer.innerHTML += `<div class="legend-item"><div class="color-box" style="background-color: ${colorMap[type]}"></div><span>${type}</span></div>`;
         });
 
+        // 用來存放縣市統計數據的空物件
+        const cityStats = {};
+
+        // 2. 讀取並處理資料
         fetch('data.json')
             .then(response => response.json())
             .then(rawData => {
                 const data = Array.isArray(rawData) ? rawData : Object.values(rawData);
                 
                 data.forEach(item => {
-                    let lat, lng;
-                    if (item['經緯度']) {
-                        const coords = item['經緯度'].split(',');
-                        lat = parseFloat(coords[0]); lng = parseFloat(coords[1]);
-                    } else if (item.lat && item.lng) {
-                        lat = item.lat; lng = item.lng;
+                    // 抓取縣市名稱 (自動解析欄位)
+                    let cityName = item['發生縣市'] || '未知縣市';
+                    if (cityName === '未知縣市' && item['完整行政區域']) {
+                        // 嘗試從完整地址切出縣市 (例如：台灣臺北市)
+                        cityName = item['完整行政區域'].replace('台灣', '').substring(0, 3);
                     }
 
-                    if (lat && lng) {
-                        const jitterLat = lat + (Math.random() - 0.5) * 0.025;
-                        const jitterLng = lng + (Math.random() - 0.5) * 0.025;
-
-                        let caseType = '未分類案件';
-                        let region = '未知區域';
-                        for (let key in item) {
-                            if (key.includes('案') || key.includes('類')) caseType = String(item[key]);
-                            if (key.includes('區') || key.includes('鄉') || key.includes('鎮')) region = String(item[key]);
-                        }
-
-                        let markerColor = colorMap['預設'];
-                        for (let colorKey in colorMap) {
-                            if (caseType.includes(colorKey)) { markerColor = colorMap[colorKey]; break; }
-                        }
-
-                        const year = item['發生年度'] || '未知';
-                        const month = item['發生月份'] || '-';
-                        const date = item['發生日期'] || '-';
-                        const timeString = (year !== '未知') ? `民國 ${year} 年 ${month} 月 ${date} 日` : '時間情報未明';
-
-                        const marker = L.circleMarker([jitterLat, jitterLng], {
-                            radius: 4, fillColor: markerColor, color: "#000", weight: 0.5, opacity: 1, fillOpacity: 0.7
-                        }).addTo(map);
-
-                        marker.bindPopup(`
-                            <div class="popup-title">📍 ${region}</div>
-                            <div style="margin-bottom: 5px;"><b>事件類型：</b> ${caseType}</div>
-                            <div style="margin-bottom: 5px;"><b>發生時間：</b> ${timeString}</div>
-                            <div style="color:#aaa; font-size:11px; margin-top:8px; border-top: 1px solid #444; padding-top: 5px;">
-                                偏移座標: ${jitterLat.toFixed(4)}, ${jitterLng.toFixed(4)}
-                            </div>
-                        `);
+                    // 抓取案件類型
+                    let caseType = '其他案類';
+                    for (let key in item) {
+                        if (key.includes('案') || key.includes('類')) caseType = String(item[key]);
                     }
-                });
-            })
-            .catch(err => console.error('數據讀取出錯:', err));
-    </script>
-</body>
-</html>
+
+                    // 【資料分析核心】：累加各縣市的案件數量
+                    if (!cityStats[cityName]) {
+                        cityStats[cityName] = { total: 0, types: {} };
+                    }
+                    cityStats[cityName].total += 1;
+                    cityStats[cityName].types[caseType] = (city
