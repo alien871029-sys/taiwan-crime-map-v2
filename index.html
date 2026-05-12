@@ -100,15 +100,28 @@
                         }).addTo(map);
 
                         // 綁定點擊後彈出的資訊卡
+                        // 【情報擴充】：精準抓取詳細時間數據 (並加入防呆機制)
+                        const year = item['發生年度'] || item.year || '未知';
+                        const month = item['發生月份'] || item.month || '-';
+                        const date = item['發生日期'] || item.date || '-';
+                        const timeString = (year !== '未知') ? `民國 ${year} 年 ${month} 月 ${date} 日` : '時間情報未明';
+
+                        // 建立圓形實戰氣泡標記
+                        const marker = L.circleMarker([jitterLat, jitterLng], {
+                            radius: 4,
+                            fillColor: markerColor,
+                            color: "#000",
+                            weight: 0.5,
+                            opacity: 1,
+                            fillOpacity: 0.7
+                        }).addTo(map);
+
+                        // 綁定點擊後彈出的資訊卡 (升級版 UI 排版)
                         marker.bindPopup(`
                             <div class="popup-title">📍 ${region}</div>
-                            <div><b>事件類型：</b> ${caseType}</div>
-                            <div style="color:#aaa; font-size:11px; margin-top:5px;">座標: ${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
+                            <div style="margin-bottom: 5px;"><b>事件類型：</b> ${caseType}</div>
+                            <div style="margin-bottom: 5px;"><b>發生時間：</b> ${timeString}</div>
+                            <div style="color:#aaa; font-size:11px; margin-top:8px; border-top: 1px solid #444; padding-top: 5px;">
+                                偏移座標: ${jitterLat.toFixed(4)}, ${jitterLng.toFixed(4)}
+                            </div>
                         `);
-                    }
-                });
-            })
-            .catch(err => console.error('情報讀取失敗，請確認 data.json 檔案是否存在:', err));
-    </script>
-</body>
-</html>
