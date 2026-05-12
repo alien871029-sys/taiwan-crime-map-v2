@@ -3,22 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>區域治安情報雷達 - 聚合分析版</title>
+    <title>區域治安情報雷達 - 精準聚合版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, sans-serif; }
         #app-container { display: flex; height: 100vh; width: 100vw; }
-        
-        /* 左側數據總覽面板 */
         #sidebar { width: 320px; background-color: #1a1a1a; border-right: 1px solid #333; display: flex; flex-direction: column; z-index: 2000; box-shadow: 2px 0 15px rgba(0,0,0,0.8); }
         .sidebar-header { padding: 20px; background: #222; border-bottom: 2px solid #ff4d4d; color: #fff; }
         .sidebar-header h2 { margin: 0; font-size: 18px; }
         .sidebar-content { flex-grow: 1; overflow-y: auto; padding: 15px; color: #ddd; }
-        
         #map-wrapper { flex-grow: 1; position: relative; }
         #map { width: 100%; height: 100%; }
         
-        /* 彈出卡片 (Popup) 樣式深度客製化 */
         .leaflet-popup-content-wrapper { background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; width: 220px; }
         .leaflet-popup-tip { background: #1e1e1e; }
         .popup-title { font-size: 16px; font-weight: bold; color: #fff; border-bottom: 2px solid #555; padding-bottom: 8px; margin-bottom: 8px; }
@@ -34,9 +30,9 @@
 <body>
     <div id="app-container">
         <div id="sidebar">
-            <div class="sidebar-header"><h2>📊 治安數據中樞</h2></div>
+            <div class="sidebar-header"><h2>📊 區域治安分析中樞</h2></div>
             <div class="sidebar-content" id="dashboard-content">
-                <p style="color:#888; text-align:center;">正在聚合區域座標與數據...</p>
+                <p style="color:#888; text-align:center;">精準座標聚合演算中...</p>
             </div>
         </div>
         <div id="map-wrapper"><div id="map"></div></div>
@@ -47,7 +43,6 @@
         const map = L.map('map').setView([23.6978, 120.9605], 7);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 18 }).addTo(map);
 
-        // 核心資料庫：用來存放聚合後的區域數據
         const regionAggregations = {};
 
         fetch('data.json')
@@ -55,7 +50,6 @@
             .then(rawData => {
                 const data = Array.isArray(rawData) ? rawData : Object.values(rawData);
                 
-                // 第一階段：資料清洗與聚合 (Aggregation)
                 data.forEach(item => {
                     let lat, lng;
                     if (item['經緯度']) {
@@ -65,34 +59,33 @@
                         lat = item.lat; lng = item.lng;
                     }
 
-                    if (lat && lng) {
-                        // 抓取行政區、案類、月份
-                        let region = item['發生鄉鎮市區'] || (item['完整行政區域'] ? item['完整行政區域'].replace('台灣', '').substring(0,6) : '未知區域');
+                    // 【防護網 1】：過濾無效的極端座標 (確保座標在台灣合理範圍內)
+                    if (lat > 20 && lat < 27 && lng > 118 && lng < 125) {
+                        
+                        // 【防護網 2】：強制綁定「縣市+鄉鎮市區」，杜絕同名區干擾
+                        let city = item['發生縣市'] || '';
+                        let dist = item['發生鄉鎮市區'] || '';
+                        let region = (city && dist) ? (city + dist) : (item['完整行政區域'] ? item['完整行政區域'].replace('台灣', '') : '未知區域');
+
                         let caseType = '其他案件';
                         for (let key in item) { if (key.includes('案') || key.includes('類')) caseType = String(item[key]); }
                         let month = item['發生月份'] || '未知';
 
-                        // 如果該區域還沒建立，先初始化一個乾淨的統計表
                         if (!regionAggregations[region]) {
                             regionAggregations[region] = { total: 0, latSum: 0, lngSum: 0, months: {} };
                         }
 
-                        // 把這筆案件的數據疊加進該區域
                         const rData = regionAggregations[region];
                         rData.total += 1;
                         rData.latSum += lat;
                         rData.lngSum += lng;
                         
-                        // 建立該月份的統計庫
                         if (!rData.months[month]) rData.months[month] = {};
                         rData.months[month][caseType] = (rData.months[month][caseType] || 0) + 1;
                     }
                 });
 
-                // 第二階段：將聚合後的數據畫成氣泡與儀表板
                 let sidebarHTML = '';
-
-                // 將物件轉為陣列，依案件總數排序
                 const sortedRegions = Object.keys(regionAggregations).map(key => ({
                     name: key, data: regionAggregations[key]
                 })).sort((a, b) => b.data.total - a.data.total);
@@ -101,11 +94,10 @@
                     const rName = regionObj.name;
                     const rData = regionObj.data;
                     
-                    // 計算該區域的平均中心座標 (讓泡泡精準落在區域中心)
+                    // 計算精準的區域中心座標
                     const centerLat = rData.latSum / rData.total;
                     const centerLng = rData.lngSum / rData.total;
 
-                    // 【危險係數判定演算法】
                     let riskLevel, riskColor, riskBg;
                     if (rData.total >= 15) {
                         riskLevel = '🔴 高度危險 (S級)'; riskColor = '#ff2a2a'; riskBg = 'rgba(255, 42, 42, 0.2)';
@@ -115,10 +107,8 @@
                         riskLevel = '🟢 相對安全 (B級)'; riskColor = '#00d4ff'; riskBg = 'rgba(0, 212, 255, 0.2)';
                     }
 
-                    // 動態計算氣泡大小 (案件越多泡泡越大，設定上下限以免破版)
                     const bubbleRadius = Math.min(Math.max(rData.total * 2.5, 8), 35);
 
-                    // --- 建立點擊後彈出的情報報表 ---
                     let popupContent = `
                         <div class="popup-title">📍 ${rName}</div>
                         <div class="risk-label" style="background:${riskBg}; color:${riskColor}; border:1px solid ${riskColor}">
@@ -127,7 +117,6 @@
                         <div style="font-size:13px; margin-bottom:5px;">區域總案件數：<b>${rData.total} 件</b></div>
                     `;
 
-                    // 將特定月份的資料一併寫入情報卡
                     for (let m in rData.months) {
                         popupContent += `<div class="month-header">📅 ${m} 月份數據：</div>`;
                         for (let type in rData.months[m]) {
@@ -135,12 +124,10 @@
                         }
                     }
 
-                    // 將泡泡放上地圖
                     L.circleMarker([centerLat, centerLng], {
                         radius: bubbleRadius, fillColor: riskColor, color: "#fff", weight: 1.5, opacity: 0.8, fillOpacity: 0.65
                     }).addTo(map).bindPopup(popupContent);
 
-                    // 同步寫入左側名單
                     sidebarHTML += `
                         <div style="background:#252525; padding:12px; margin-bottom:10px; border-radius:5px; border-left:4px solid ${riskColor};">
                             <div style="font-size:15px; font-weight:bold; color:#fff;">${rName}</div>
@@ -153,7 +140,7 @@
             })
             .catch(err => {
                 console.error('資料載入錯誤:', err);
-                document.getElementById('dashboard-content').innerHTML = '<p style="color:#ff4d4d; text-align:center;">資料解析失敗，請確認 data.json 格式</p>';
+                document.getElementById('dashboard-content').innerHTML = '<p style="color:#ff4d4d; text-align:center;">資料解析失敗</p>';
             });
     </script>
 </body>
