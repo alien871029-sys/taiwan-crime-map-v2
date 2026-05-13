@@ -1,2 +1,2 @@
-# taiwan-crime-map-v2
+# taiwan-crime-map-beta
 crime-map
