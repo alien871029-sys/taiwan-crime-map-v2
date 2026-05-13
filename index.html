@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全台區域治安情報雷達 - 終極精準版</title>
+    <title>全台區域治安情報雷達 - 飛航戰術版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, sans-serif; overflow: hidden; }
@@ -12,6 +12,11 @@
         .sidebar-header { padding: 20px; background: #222; border-bottom: 2px solid #ff4d4d; color: #fff; }
         .sidebar-header h2 { margin: 0; font-size: 18px; letter-spacing: 1px; }
         .sidebar-content { flex-grow: 1; overflow-y: auto; padding: 15px; color: #ddd; }
+        
+        /* 側邊欄卡片升級：加入點擊互動感 */
+        .city-card { background:#252525; padding:12px; margin-bottom:10px; border-radius:5px; border-left:4px solid transparent; cursor: pointer; transition: all 0.2s ease; border-right: 1px solid transparent; border-top: 1px solid transparent; border-bottom: 1px solid transparent;}
+        .city-card:hover { background:#333; transform: translateX(5px); box-shadow: 2px 2px 8px rgba(0,0,0,0.5); border-color: #555; }
+        
         #map-wrapper { flex-grow: 1; position: relative; }
         #map { width: 100%; height: 100%; }
         
@@ -33,14 +38,14 @@
         <div id="sidebar">
             <div class="sidebar-header"><h2>📊 治安數據分析中樞</h2></div>
             <div class="sidebar-content" id="dashboard-content">
-                <p style="color:#888; text-align:center; margin-top: 20px;">啟動中：匯入情報庫與精準校正...</p>
+                <p style="color:#888; text-align:center; margin-top: 20px;">資料匯入與精準校正中...</p>
             </div>
         </div>
         <div id="map-wrapper">
             <div id="map"></div>
             <div class="disclaimer-box">
                 <b>免責與資料聲明</b><br>
-                本系統數據源自政府公開資料，僅做視覺化與公益探討。受限於原始資料精度，標示位置為行政區聚合中心，不代表確切案發門牌與絕對危險。使用者應自行判斷適用性，本系統不承擔相關法律責任。
+                本系統數據源自政府公開資料，受限於原始資料精度，標示位置為行政區聚合中心，不代表確切案發門牌與絕對危險。使用者應自行判斷適用性，本系統不承擔相關法律責任。
             </div>
         </div>
     </div>
@@ -211,6 +216,9 @@
         };
 
         const regionAggregations = {};
+        
+        // 氣泡陣列，用來在點擊左側時自動觸發右側的 Popup
+        const mapMarkers = {}; 
 
         fetch('data.json')
             .then(res => res.json())
@@ -260,28 +268,27 @@
                     
                     let centerLat, centerLng;
                     if (taiwanDistricts[rName]) {
-                        centerLat = taiwanDistricts[rName][0];
-                        centerLng = taiwanDistricts[rName][1];
+                        centerLat = taiwanDistricts[rName][0]; centerLng = taiwanDistricts[rName][1];
                     } else {
-                        centerLat = rData.latSum / rData.total;
-                        centerLng = rData.lngSum / rData.total;
+                        centerLat = rData.latSum / rData.total; centerLng = rData.lngSum / rData.total;
                     }
 
+                    // 【戰略調整】：大幅上調危險門檻，避免滿江紅
                     let riskLevel, riskColor, riskBg;
-                    if (rData.total >= 15) {
-                        riskLevel = '🔴 高度危險 (S級)'; riskColor = '#ff2a2a'; riskBg = 'rgba(255, 42, 42, 0.2)';
-                    } else if (rData.total >= 5) {
-                        riskLevel = '🟡 中度警戒 (A級)'; riskColor = '#ffb300'; riskBg = 'rgba(255, 179, 0, 0.2)';
+                    if (rData.total >= 50) {
+                        riskLevel = '🔴 高度警戒 (S級)'; riskColor = '#ff2a2a'; riskBg = 'rgba(255, 42, 42, 0.2)';
+                    } else if (rData.total >= 20) {
+                        riskLevel = '🟡 中度注意 (A級)'; riskColor = '#ffb300'; riskBg = 'rgba(255, 179, 0, 0.2)';
                     } else {
-                        riskLevel = '🟢 相對安全 (B級)'; riskColor = '#00d4ff'; riskBg = 'rgba(0, 212, 255, 0.2)';
+                        riskLevel = '🟢 相對平穩 (B級)'; riskColor = '#00d4ff'; riskBg = 'rgba(0, 212, 255, 0.2)';
                     }
 
-                    const bubbleRadius = Math.min(Math.max(rData.total * 2.5, 8), 35);
+                    const bubbleRadius = Math.min(Math.max(rData.total * 1.5, 8), 40);
 
                     let popupContent = `
                         <div class="popup-title">📍 ${rName}</div>
                         <div class="risk-label" style="background:${riskBg}; color:${riskColor}; border-color:${riskColor}">
-                            危險係數：${riskLevel}
+                            評估狀態：${riskLevel}
                         </div>
                         <div style="font-size:13px; margin-bottom:5px;">區域總計：<b>${rData.total} 件</b></div>
                     `;
@@ -293,14 +300,19 @@
                         }
                     }
 
-                    L.circleMarker([centerLat, centerLng], {
+                    // 綁定氣泡，並將其存入物件中以供左側點擊時呼叫
+                    const marker = L.circleMarker([centerLat, centerLng], {
                         radius: bubbleRadius, fillColor: riskColor, color: "#fff", weight: 1.5, opacity: 0.8, fillOpacity: 0.65
                     }).addTo(map).bindPopup(popupContent);
+                    
+                    mapMarkers[rName] = marker;
 
+                    // 【新功能】：加入 onclick 事件觸發地圖飛行 (flyTo) 與自動打開 Popup
                     sidebarHTML += `
-                        <div style="background:#252525; padding:12px; margin-bottom:10px; border-radius:5px; border-left:4px solid ${riskColor};">
+                        <div class="city-card" style="border-left-color: ${riskColor};" 
+                             onclick="map.flyTo([${centerLat}, ${centerLng}], 14, {duration: 1.5}); setTimeout(() => { mapMarkers['${rName}'].openPopup(); }, 1500);">
                             <div style="font-size:15px; font-weight:bold; color:#fff;">${rName}</div>
-                            <div style="font-size:12px; color:#aaa; margin-top:4px;">總計: ${rData.total} 件 | 係數: ${riskLevel.substring(0,2)}</div>
+                            <div style="font-size:12px; color:#aaa; margin-top:4px;">總計: ${rData.total} 件 | 狀態: ${riskLevel.substring(0,2)}</div>
                         </div>
                     `;
                 });
@@ -309,7 +321,7 @@
             })
             .catch(err => {
                 console.error('資料載入錯誤:', err);
-                document.getElementById('dashboard-content').innerHTML = '<p style="color:#ff4d4d; text-align:center; margin-top:20px;">資料解析失敗，請確認 data.json 格式正確無誤。</p>';
+                document.getElementById('dashboard-content').innerHTML = '<p style="color:#ff4d4d; text-align:center; margin-top:20px;">資料解析失敗。</p>';
             });
     </script>
 </body>
