@@ -3,24 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>區域治安情報雷達 - 精準聚合版</title>
+    <title>全台區域治安情報雷達 - 精準聚合版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        body, html { margin: 0; padding: 0; height: 100%; background-color: #121212; font-family: 'Segoe UI', Tahoma, sans-serif; overflow: hidden; }
         #app-container { display: flex; height: 100vh; width: 100vw; }
+        
+        /* 戰術儀表板左側設計 */
         #sidebar { width: 320px; background-color: #1a1a1a; border-right: 1px solid #333; display: flex; flex-direction: column; z-index: 2000; box-shadow: 2px 0 15px rgba(0,0,0,0.8); }
         .sidebar-header { padding: 20px; background: #222; border-bottom: 2px solid #ff4d4d; color: #fff; }
-        .sidebar-header h2 { margin: 0; font-size: 18px; }
+        .sidebar-header h2 { margin: 0; font-size: 18px; letter-spacing: 1px; }
         .sidebar-content { flex-grow: 1; overflow-y: auto; padding: 15px; color: #ddd; }
+        
+        /* 地圖區塊 */
         #map-wrapper { flex-grow: 1; position: relative; }
         #map { width: 100%; height: 100%; }
         
+        /* 彈出視窗(情報卡)深度客製化 */
         .leaflet-popup-content-wrapper { background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; width: 220px; }
         .leaflet-popup-tip { background: #1e1e1e; }
         .popup-title { font-size: 16px; font-weight: bold; color: #fff; border-bottom: 2px solid #555; padding-bottom: 8px; margin-bottom: 8px; }
-        .risk-label { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-bottom: 10px; }
+        .risk-label { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-bottom: 10px; border: 1px solid transparent; }
         .month-header { color: #00d4ff; font-weight: bold; margin-top: 10px; border-bottom: 1px dashed #444; padding-bottom: 3px; }
         .crime-row { display: flex; justify-content: space-between; font-size: 13px; margin-top: 4px; color: #bbb; }
+        
+        /* 右下角免責聲明 */
+        .disclaimer-box { position: absolute; bottom: 20px; right: 10px; z-index: 1000; background: rgba(20, 20, 20, 0.85); padding: 10px 15px; border-radius: 4px; color: #888; font-size: 11px; max-width: 300px; border: 1px solid #333; pointer-events: none; }
         
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #1a1a1a; }
@@ -30,21 +38,50 @@
 <body>
     <div id="app-container">
         <div id="sidebar">
-            <div class="sidebar-header"><h2>📊 區域治安分析中樞</h2></div>
+            <div class="sidebar-header"><h2>📊 治安數據分析中樞</h2></div>
             <div class="sidebar-content" id="dashboard-content">
-                <p style="color:#888; text-align:center;">精準座標聚合演算中...</p>
+                <p style="color:#888; text-align:center; margin-top: 20px;">啟動中：匯入情報庫與精準校正...</p>
             </div>
         </div>
-        <div id="map-wrapper"><div id="map"></div></div>
+        
+        <div id="map-wrapper">
+            <div id="map"></div>
+            <div class="disclaimer-box">
+                <b>免責與資料聲明</b><br>
+                本系統數據源自政府公開資料，僅做視覺化與公益探討。受限於原始資料精度，標示位置為行政區聚合中心，不代表確切案發門牌與絕對危險。使用者應自行判斷適用性，本系統不承擔相關法律責任。
+            </div>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        // 1. 初始化 Leaflet 暗黑地圖
         const map = L.map('map').setView([23.6978, 120.9605], 7);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 18 }).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; CARTO', maxZoom: 18
+        }).addTo(map);
+
+        // ==========================================
+        // 【核心武器】：精準座標字典 (Lookup Table)
+        // 在這裡輸入你確認過不會跑掉的標準座標。
+        // 當資料庫遇到這些區域，就會像釘子一樣釘死在這裡！
+        // ==========================================
+        const taiwanDistricts = {
+            "新北市板橋區": [25.0118, 121.4624],
+            "新北市永和區": [25.0080, 121.5173],
+            "新北市新莊區": [25.0355, 121.4323],
+            "台北市大安區": [25.0263, 121.5328],
+            "台北市中山區": [25.0685, 121.5280],
+            "基隆市中山區": [25.1437, 121.7342],
+            "台北市信義區": [25.0330, 121.5654],
+            "台中市西屯區": [24.1632, 120.6395],
+            "高雄市左營區": [22.6848, 120.3015]
+            // 哥，你隨時可以繼續在這裡往下加，格式就是 "縣市+行政區": [緯度, 經度],
+        };
 
         const regionAggregations = {};
 
+        // 2. 載入並聚合資料
         fetch('data.json')
             .then(res => res.json())
             .then(rawData => {
@@ -59,32 +96,37 @@
                         lat = item.lat; lng = item.lng;
                     }
 
-                    // 【防護網 1】：過濾無效的極端座標 (確保座標在台灣合理範圍內)
+                    // 基本防呆過濾
                     if (lat > 20 && lat < 27 && lng > 118 && lng < 125) {
                         
-                        // 【防護網 2】：強制綁定「縣市+鄉鎮市區」，杜絕同名區干擾
+                        // 強制複合綁定，組成如 "新北市板橋區"
                         let city = item['發生縣市'] || '';
                         let dist = item['發生鄉鎮市區'] || '';
                         let region = (city && dist) ? (city + dist) : (item['完整行政區域'] ? item['完整行政區域'].replace('台灣', '') : '未知區域');
 
+                        // 抓取案類與月份
                         let caseType = '其他案件';
                         for (let key in item) { if (key.includes('案') || key.includes('類')) caseType = String(item[key]); }
                         let month = item['發生月份'] || '未知';
 
+                        // 初始化該區容器
                         if (!regionAggregations[region]) {
                             regionAggregations[region] = { total: 0, latSum: 0, lngSum: 0, months: {} };
                         }
 
+                        // 疊加數據
                         const rData = regionAggregations[region];
                         rData.total += 1;
                         rData.latSum += lat;
                         rData.lngSum += lng;
                         
+                        // 分類到特定月份與案類
                         if (!rData.months[month]) rData.months[month] = {};
                         rData.months[month][caseType] = (rData.months[month][caseType] || 0) + 1;
                     }
                 });
 
+                // 3. 繪製氣泡與儀表板
                 let sidebarHTML = '';
                 const sortedRegions = Object.keys(regionAggregations).map(key => ({
                     name: key, data: regionAggregations[key]
@@ -94,10 +136,18 @@
                     const rName = regionObj.name;
                     const rData = regionObj.data;
                     
-                    // 計算精準的區域中心座標
-                    const centerLat = rData.latSum / rData.total;
-                    const centerLng = rData.lngSum / rData.total;
+                    let centerLat, centerLng;
 
+                    // 【定位演算法】：字典優先，查無資料才用平均值
+                    if (taiwanDistricts[rName]) {
+                        centerLat = taiwanDistricts[rName][0];
+                        centerLng = taiwanDistricts[rName][1];
+                    } else {
+                        centerLat = rData.latSum / rData.total;
+                        centerLng = rData.lngSum / rData.total;
+                    }
+
+                    // 【危險係數判定】
                     let riskLevel, riskColor, riskBg;
                     if (rData.total >= 15) {
                         riskLevel = '🔴 高度危險 (S級)'; riskColor = '#ff2a2a'; riskBg = 'rgba(255, 42, 42, 0.2)';
@@ -107,16 +157,19 @@
                         riskLevel = '🟢 相對安全 (B級)'; riskColor = '#00d4ff'; riskBg = 'rgba(0, 212, 255, 0.2)';
                     }
 
+                    // 動態氣泡大小
                     const bubbleRadius = Math.min(Math.max(rData.total * 2.5, 8), 35);
 
+                    // 組合情報卡 (Popup)
                     let popupContent = `
                         <div class="popup-title">📍 ${rName}</div>
-                        <div class="risk-label" style="background:${riskBg}; color:${riskColor}; border:1px solid ${riskColor}">
+                        <div class="risk-label" style="background:${riskBg}; color:${riskColor}; border-color:${riskColor}">
                             危險係數：${riskLevel}
                         </div>
-                        <div style="font-size:13px; margin-bottom:5px;">區域總案件數：<b>${rData.total} 件</b></div>
+                        <div style="font-size:13px; margin-bottom:5px;">區域總計：<b>${rData.total} 件</b></div>
                     `;
 
+                    // 將該區所有月份數據列出
                     for (let m in rData.months) {
                         popupContent += `<div class="month-header">📅 ${m} 月份數據：</div>`;
                         for (let type in rData.months[m]) {
@@ -124,10 +177,12 @@
                         }
                     }
 
+                    // 將氣泡打在地圖上
                     L.circleMarker([centerLat, centerLng], {
                         radius: bubbleRadius, fillColor: riskColor, color: "#fff", weight: 1.5, opacity: 0.8, fillOpacity: 0.65
                     }).addTo(map).bindPopup(popupContent);
 
+                    // 同步寫入左側名單面板
                     sidebarHTML += `
                         <div style="background:#252525; padding:12px; margin-bottom:10px; border-radius:5px; border-left:4px solid ${riskColor};">
                             <div style="font-size:15px; font-weight:bold; color:#fff;">${rName}</div>
@@ -140,7 +195,7 @@
             })
             .catch(err => {
                 console.error('資料載入錯誤:', err);
-                document.getElementById('dashboard-content').innerHTML = '<p style="color:#ff4d4d; text-align:center;">資料解析失敗</p>';
+                document.getElementById('dashboard-content').innerHTML = '<p style="color:#ff4d4d; text-align:center; margin-top:20px;">資料解析失敗，請確認 data.json 格式</p>';
             });
     </script>
 </body>
